@@ -1,0 +1,151 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Design Tokens as specified */
+  --color-coral: #CD6B6B;
+  --color-coral-light: #FBF1F1;
+  --color-coral-hover: #B85959;
+  --color-coral-dark: #933838;
+
+  --color-salmon: #EBAFA3;
+  --color-salmon-light: #FDF6F4;
+  --color-salmon-hover: #DE9B8F;
+  --color-salmon-dark: #B66F62;
+
+  --color-sage: #BDD1C3;
+  --color-sage-light: #F4F8F5; /* very light sage tint for page background */
+  --color-sage-border: #D8E4DC; /* soft sage border for cards and sheets */
+  --color-sage-hover: #A5C0AD;
+  --color-sage-dark: #6C8C77;
+
+  --color-teal: #4A929B;
+  --color-teal-light: #EDF6F7;
+  --color-teal-hover: #3C7B83;
+  --color-teal-dark: #2A5E65;
+
+  --color-navy: #1F2F55;
+  --color-navy-light: #EBF0F8;
+  --color-navy-hover: #162341;
+  --color-navy-dark: #0F172C;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-sage-light);
+    color: var(--color-navy);
+    font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+    user-select: text;
+  }
+
+  /* Accessible outline */
+  :focus-visible {
+    outline: 2px solid var(--color-teal);
+    outline-offset: 2px;
+  }
+}
+
+/* Custom utility classes referencing the design tokens */
+@layer components {
+  /* Cards & Sheets */
+  .ll-card {
+    background-color: #ffffff;
+    border: 1px solid var(--color-sage-border);
+    border-radius: 1rem;
+    box-shadow: 0 2px 10px rgba(31, 47, 85, 0.04);
+  }
+
+  .ll-card-hover {
+    transition: all 0.2s ease-in-out;
+  }
+  .ll-card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(31, 47, 85, 0.08);
+  }
+
+  /* Primary Button (Teal with hover darker teal) */
+  .ll-btn-primary {
+    background-color: var(--color-teal);
+    color: #ffffff;
+    font-weight: 600;
+    border-radius: 0.875rem;
+    padding: 0.75rem 1.25rem;
+    min-height: 48px; /* Large tap target */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    transition: background-color 0.15s ease, transform 0.1s ease;
+  }
+  .ll-btn-primary:hover:not(:disabled) {
+    background-color: var(--color-teal-hover);
+  }
+  .ll-btn-primary:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+  .ll-btn-primary:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  /* Secondary Button / Filter Pill (Sage background with navy text) */
+  .ll-btn-secondary {
+    background-color: var(--color-sage);
+    color: var(--color-navy);
+    font-weight: 600;
+    border-radius: 0.875rem;
+    padding: 0.65rem 1.15rem;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    transition: background-color 0.15s ease;
+  }
+  .ll-btn-secondary:hover:not(:disabled) {
+    background-color: var(--color-sage-hover);
+  }
+
+  /* Coral Highlight / Destructive Button */
+  .ll-btn-coral {
+    background-color: var(--color-coral);
+    color: #ffffff;
+    font-weight: 600;
+    border-radius: 0.875rem;
+    padding: 0.75rem 1.25rem;
+    min-height: 48px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    transition: background-color 0.15s ease;
+  }
+  .ll-btn-coral:hover:not(:disabled) {
+    background-color: var(--color-coral-hover);
+  }
+
+  /* Input fields with generous tap target */
+  .ll-input {
+    width: 100%;
+    min-height: 48px;
+    padding: 0.75rem 1rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--color-sage-border);
+    background-color: #ffffff;
+    color: var(--color-navy);
+    font-size: 0.95rem;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .ll-input:focus {
+    border-color: var(--color-teal);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(74, 146, 155, 0.2);
+  }
+  .ll-input::placeholder {
+    color: #8c9bb0;
+  }
+}
