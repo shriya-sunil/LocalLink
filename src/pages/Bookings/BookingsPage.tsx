@@ -17,8 +17,10 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import {
+  getBookingById,
   getBookings,
   updateBookingStatus,
+  markBookingCompleteByProvider,
   confirmCustomerCompletion,
   processPayment,
   cancelBooking,
@@ -28,6 +30,7 @@ import { getOrCreateConversation } from '../../lib/api/chat';
 import { Booking, BookingStatus, PaymentMethod } from '../../types';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { RatingStars } from '../../components/common/RatingStars';
+import { isDevDemoMode } from '../../lib/api/supabaseClient';
 
 export const BookingsPage: React.FC = () => {
   const { t } = useTranslation();
@@ -45,7 +48,8 @@ export const BookingsPage: React.FC = () => {
   // Screen 9: Customer Job Completion & Payment Modal
   const [paymentBooking, setPaymentBooking] = useState<Booking | null>(null);
   const [paymentStep, setPaymentStep] = useState<'confirm_work' | 'choose_method' | 'success'>('confirm_work');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('online');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(() => isDevDemoMode() ? 'online' : 'cash');
+  const [paymentError, setPaymentError] = useState<string | null>(null);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
   // Screen 10: Customer Review Modal
@@ -93,10 +97,7 @@ export const BookingsPage: React.FC = () => {
   // Action: Pro marks complete
   const handleMarkCompleteByPro = async (booking: Booking) => {
     try {
-      // Moves status to ready for customer confirmation
-      await updateBookingStatus(booking.id, 'in_progress');
-      // For demo, we alert pro that customer confirmation has been triggered
-      alert('Completion notification sent to customer! Once customer confirms work and settles payment, the job marks completed.');
+      await markBookingCompleteByProvider(booking.id);
       loadData();
     } catch (err) {
       console.error(err);
@@ -107,27 +108,37 @@ export const BookingsPage: React.FC = () => {
   const handleOpenCompletionFlow = (booking: Booking) => {
     setPaymentBooking(booking);
     setPaymentStep('confirm_work');
+    setPaymentError(null);
   };
 
   const handleCustomerConfirmWork = async () => {
     if (!paymentBooking) return;
     try {
-      await confirmCustomerCompletion(paymentBooking.id);
+      const updatedBooking = await confirmCustomerCompletion(paymentBooking.id);
+      setPaymentBooking({ ...paymentBooking, ...updatedBooking, customerConfirmedCompletion: true });
       setPaymentStep('choose_method');
+      setPaymentError(null);
     } catch (err) {
-      console.error(err);
+      setPaymentError(err instanceof Error ? err.message : 'Could not confirm the completed work.');
     }
   };
 
   const handleProcessPayment = async () => {
     if (!paymentBooking) return;
     setIsProcessingPayment(true);
+    setPaymentError(null);
     try {
-      await processPayment(paymentBooking.id, paymentMethod);
+      const latestBooking = await getBookingById(paymentBooking.id);
+      const bookingId = latestBooking?.id || paymentBooking.id;
+      if (latestBooking) {
+        setPaymentBooking((prev) => prev ? { ...prev, ...latestBooking } : latestBooking);
+      }
+
+      await processPayment(bookingId, paymentMethod);
       setPaymentStep('success');
       loadData();
     } catch (err) {
-      console.error(err);
+      setPaymentError(err instanceof Error ? err.message : 'Payment could not be recorded.');
     } finally {
       setIsProcessingPayment(false);
     }
@@ -357,7 +368,7 @@ export const BookingsPage: React.FC = () => {
                       </button>
                     )}
 
-                    {isPro && booking.status === 'in_progress' && (
+                    {isPro && booking.status === 'in_progress' && !booking.providerMarkedComplete && (
                       <button
                         type="button"
                         onClick={() => handleMarkCompleteByPro(booking)}
@@ -368,8 +379,12 @@ export const BookingsPage: React.FC = () => {
                       </button>
                     )}
 
+                    {isPro && booking.status === 'in_progress' && booking.providerMarkedComplete && (
+                      <span className="text-xs font-semibold text-teal-dark">Awaiting customer confirmation</span>
+                    )}
+
                     {/* CUSTOMER ACTIONS (Screen 9 & 10) */}
-                    {!isPro && ['in_progress', 'accepted'].includes(booking.status) && (
+                    {!isPro && booking.status === 'in_progress' && booking.providerMarkedComplete && (
                       <button
                         type="button"
                         onClick={() => handleOpenCompletionFlow(booking)}
@@ -381,7 +396,7 @@ export const BookingsPage: React.FC = () => {
                     )}
 
                     {/* Customer Review Button after Completion */}
-                    {!isPro && isCompleted && (
+                    {!isPro && isCompleted && !booking.hasReview && (
                       <button
                         type="button"
                         onClick={() => {
@@ -478,6 +493,7 @@ export const BookingsPage: React.FC = () => {
 
                   {/* Payment Options */}
                   <div className="space-y-2.5">
+                    {isDevDemoMode() && (
                     <button
                       type="button"
                       onClick={() => setPaymentMethod('online')}
@@ -499,6 +515,7 @@ export const BookingsPage: React.FC = () => {
                         </div>
                       </div>
                     </button>
+                    )}
 
                     <button
                       type="button"
@@ -522,6 +539,10 @@ export const BookingsPage: React.FC = () => {
                       </div>
                     </button>
                   </div>
+
+                  {paymentError && (
+                    <p role="alert" className="text-xs font-medium text-coral">{paymentError}</p>
+                  )}
 
                   {/* No Refund Policy Notice */}
                   <div className="p-3 rounded-xl bg-salmon-light/60 border border-salmon text-[11px] text-navy">

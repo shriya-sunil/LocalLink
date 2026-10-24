@@ -105,6 +105,7 @@ export interface Booking {
   status: BookingStatus;
   paymentStatus: 'pending' | 'completed';
   paymentMethod?: PaymentMethod;
+  providerMarkedComplete: boolean;
   customerConfirmedCompletion: boolean;
   createdAt: string;
   completedAt?: string;

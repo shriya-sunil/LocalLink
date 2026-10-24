@@ -318,6 +318,7 @@ export const MOCK_BOOKINGS: Booking[] = [
     price: 450,
     status: 'in_progress',
     paymentStatus: 'pending',
+    providerMarkedComplete: false,
     customerConfirmedCompletion: false,
     createdAt: '2026-10-22T07:00:00Z',
   },
@@ -338,6 +339,7 @@ export const MOCK_BOOKINGS: Booking[] = [
     status: 'completed',
     paymentStatus: 'completed',
     paymentMethod: 'online',
+    providerMarkedComplete: true,
     customerConfirmedCompletion: true,
     createdAt: '2026-10-18T10:00:00Z',
     completedAt: '2026-10-18T12:30:00Z',
@@ -359,6 +361,7 @@ export const MOCK_BOOKINGS: Booking[] = [
     price: 1200,
     status: 'accepted',
     paymentStatus: 'pending',
+    providerMarkedComplete: false,
     customerConfirmedCompletion: false,
     createdAt: '2026-10-21T16:00:00Z',
   }

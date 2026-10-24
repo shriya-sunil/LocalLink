@@ -299,7 +299,9 @@ export const AuthPage: React.FC = () => {
                       required
                     />
                     <p className="text-[11px] text-gray-500 mt-1 text-center">
-                      Tip: Enter demo code <span className="font-bold text-teal">123456</span> to continue.
+                      {devDemoEnabled
+                        ? <>Demo code: <span className="font-bold text-teal">123456</span></>
+                        : 'Enter the verification code sent to your phone.'}
                     </p>
                   </div>
 

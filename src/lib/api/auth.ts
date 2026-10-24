@@ -4,70 +4,76 @@ import { DEMO_CUSTOMER_USER, DEMO_PRO_USER } from '../mockData';
 
 const ACTIVE_ROLE_KEY = 'locallink_active_role';
 
+function isDemoEmail(email: string): boolean {
+  const normalized = email.trim().toLowerCase();
+  return normalized === DEMO_CUSTOMER_USER.email.toLowerCase() || normalized === DEMO_PRO_USER.email.toLowerCase();
+}
+
+function isDemoPhone(phone: string): boolean {
+  const normalized = phone.replace(/\s+/g, '').toLowerCase();
+  return normalized === DEMO_CUSTOMER_USER.phone.replace(/\s+/g, '').toLowerCase() || normalized === DEMO_PRO_USER.phone.replace(/\s+/g, '').toLowerCase();
+}
+
 export async function getCurrentUser(): Promise<User | null> {
-  // 1. Check if Dev Demo Flag is active and user is using a mock demo profile
+  try {
+    const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
+    if (sessionErr) throw sessionErr;
+
+    if (session?.user) {
+      const authUser = session.user;
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authUser.id)
+        .maybeSingle();
+
+      const { data: proProfile } = await supabase
+        .from('provider_profiles')
+        .select('user_id')
+        .eq('user_id', authUser.id)
+        .maybeSingle();
+
+      const isPro = Boolean(proProfile);
+      const storedRole = (localStorage.getItem(ACTIVE_ROLE_KEY) as UserRole) || (isPro ? 'provider' : 'customer');
+
+      return {
+        id: authUser.id,
+        email: authUser.email,
+        phone: profile?.phone || authUser.phone || '',
+        name: profile?.full_name || authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Neighbor',
+        avatar: profile?.avatar_url || authUser.user_metadata?.avatar_url || '',
+        activeRole: storedRole,
+        isProRegistered: isPro,
+        createdAt: profile?.created_at || authUser.created_at,
+      };
+    }
+  } catch (err) {
+    console.warn('Failed to retrieve Supabase session:', err);
+  }
+
   if (isDevDemoMode()) {
     const demoRole = localStorage.getItem(ACTIVE_ROLE_KEY) as UserRole || 'customer';
     return demoRole === 'provider' ? DEMO_PRO_USER : DEMO_CUSTOMER_USER;
   }
 
-  // 2. Real Supabase Session lookup
-  try {
-    const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
-    if (sessionErr) throw sessionErr;
-
-    if (!session?.user) {
-      return null;
-    }
-
-    const authUser = session.user;
-
-    // Load profile from "profiles" table
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', authUser.id)
-      .maybeSingle();
-
-    // Check if user has an existing provider profile
-    const { data: proProfile } = await supabase
-      .from('provider_profiles')
-      .select('user_id')
-      .eq('user_id', authUser.id)
-      .maybeSingle();
-
-    const isPro = Boolean(proProfile);
-    const storedRole = (localStorage.getItem(ACTIVE_ROLE_KEY) as UserRole) || (isPro ? 'provider' : 'customer');
-
-    const user: User = {
-      id: authUser.id,
-      email: authUser.email,
-      phone: profile?.phone || authUser.phone || '',
-      name: profile?.full_name || authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Neighbor',
-      avatar: profile?.avatar_url || authUser.user_metadata?.avatar_url || '',
-      activeRole: storedRole,
-      isProRegistered: isPro,
-      createdAt: profile?.created_at || authUser.created_at,
-    };
-
-    return user;
-  } catch (err) {
-    console.warn('Failed to retrieve Supabase session:', err);
-    return null;
-  }
+  return null;
 }
 
 export async function signInWithEmail(email: string, password: string): Promise<User> {
-  // If in dev demo mode, allow mock credentials
-  if (isDevDemoMode()) {
-    const isPro = email.toLowerCase().includes('pro') || email.toLowerCase().includes('ramesh');
+  const normalizedEmail = email.trim();
+
+  if (isDevDemoMode() && isDemoEmail(normalizedEmail)) {
+    const isPro = normalizedEmail.toLowerCase() === DEMO_PRO_USER.email.toLowerCase();
     const user = isPro ? DEMO_PRO_USER : DEMO_CUSTOMER_USER;
     localStorage.setItem(ACTIVE_ROLE_KEY, user.activeRole);
     return user;
   }
 
+  setDevDemoMode(false);
+
   const { data, error } = await supabase.auth.signInWithPassword({
-    email: email.trim(),
+    email: normalizedEmail,
     password,
   });
 
@@ -114,7 +120,7 @@ export async function signUpWithEmail(
   password: string,
   role: UserRole
 ): Promise<User> {
-  if (isDevDemoMode()) {
+  if (isDevDemoMode() && isDemoEmail(email)) {
     const user: User = {
       ...DEMO_CUSTOMER_USER,
       id: 'usr_' + Date.now(),
@@ -125,6 +131,8 @@ export async function signUpWithEmail(
     };
     return user;
   }
+
+  setDevDemoMode(false);
 
   // Rule: "A profile row is created automatically on sign-up. Update it afterward (full_name, phone, language)."
   const { data, error } = await supabase.auth.signUp({
@@ -226,7 +234,8 @@ export async function logout(): Promise<void> {
 }
 
 export async function sendOtp(phone: string): Promise<boolean> {
-  if (isDevDemoMode()) return true;
+  if (isDevDemoMode() && isDemoPhone(phone)) return true;
+  setDevDemoMode(false);
   const { error } = await supabase.auth.signInWithOtp({
     phone: phone.trim(),
   });
@@ -237,11 +246,13 @@ export async function sendOtp(phone: string): Promise<boolean> {
 }
 
 export async function verifyOtp(phone: string, token: string, role: UserRole = 'customer'): Promise<User> {
-  if (isDevDemoMode() && token === '123456') {
+  if (isDevDemoMode() && isDemoPhone(phone) && token === '123456') {
     const user = role === 'provider' ? DEMO_PRO_USER : DEMO_CUSTOMER_USER;
     localStorage.setItem(ACTIVE_ROLE_KEY, role);
     return user;
   }
+
+  setDevDemoMode(false);
 
   const { data, error } = await supabase.auth.verifyOtp({
     phone: phone.trim(),
@@ -270,6 +281,7 @@ export async function verifyOtp(phone: string, token: string, role: UserRole = '
 }
 
 export async function signInWithGoogle(): Promise<User> {
+  setDevDemoMode(false);
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {

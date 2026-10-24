@@ -19,6 +19,15 @@ function saveStoredBookings(list: Booking[]) {
   localStorage.setItem(BOOKINGS_STORAGE_KEY, JSON.stringify(list));
 }
 
+function getReviewedBookingIds(): Set<string> {
+  try {
+    const reviews = JSON.parse(localStorage.getItem('locallink_reviews_cache') || '[]') as { bookingId: string }[];
+    return new Set(reviews.map((review) => review.bookingId));
+  } catch {
+    return new Set();
+  }
+}
+
 function mapBooking(row: any): Booking {
   const customer = Array.isArray(row.customer) ? row.customer[0] : row.customer;
   const providerProfile = Array.isArray(row.provider) ? row.provider[0] : row.provider;
@@ -46,6 +55,7 @@ function mapBooking(row: any): Booking {
     status: row.status,
     paymentStatus: payment?.status === 'completed' ? 'completed' : 'pending',
     paymentMethod: payment?.method || undefined,
+    providerMarkedComplete: Boolean(row.provider_marked_complete),
     customerConfirmedCompletion: Boolean(row.customer_confirmed),
     createdAt: row.created_at,
     completedAt: row.status === 'completed' ? payment?.paid_at || undefined : undefined,
@@ -58,7 +68,11 @@ const BOOKING_SELECT = '*, customer:profiles!bookings_customer_id_fkey(full_name
 export async function getBookings(userId: string, role: 'customer' | 'provider'): Promise<Booking[]> {
   if (isDevDemoMode()) {
     await new Promise((r) => setTimeout(r, 150));
-    const list = getStoredBookings();
+    const reviewedBookingIds = getReviewedBookingIds();
+    const list = getStoredBookings().map((booking) => ({
+      ...booking,
+      hasReview: booking.hasReview || reviewedBookingIds.has(booking.id),
+    }));
     if (role === 'customer') {
       return list.filter((b) => b.customerId === userId || b.customerId === 'usr_priya_01');
     }
@@ -92,9 +106,15 @@ export async function getBookingById(id: string): Promise<Booking | null> {
 
 export async function updateBookingStatus(id: string, status: BookingStatus): Promise<Booking> {
   if (!isDevDemoMode()) {
+    const updatePayload: Record<string, unknown> = { status };
+    if (status === 'completed') {
+      updatePayload.customer_confirmed = true;
+      updatePayload.provider_marked_complete = true;
+    }
+
     const { data, error } = await supabase
       .from('bookings')
-      .update({ status })
+      .update(updatePayload)
       .eq('id', id)
       .select('id')
       .maybeSingle();
@@ -112,10 +132,45 @@ export async function updateBookingStatus(id: string, status: BookingStatus): Pr
 
   list[idx].status = status;
   if (status === 'completed') {
+    list[idx].paymentStatus = 'completed';
+    list[idx].paymentMethod = list[idx].paymentMethod || 'cash';
+    list[idx].providerMarkedComplete = true;
+    list[idx].customerConfirmedCompletion = true;
     list[idx].completedAt = new Date().toISOString();
   }
   saveStoredBookings(list);
   return list[idx];
+}
+
+export async function markBookingCompleteByProvider(id: string): Promise<Booking> {
+  if (!isDevDemoMode()) {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+    if (!user) throw new Error('Sign in before marking a booking complete.');
+
+    const { data, error } = await supabase
+      .from('bookings')
+      .update({ provider_marked_complete: true })
+      .eq('id', id)
+      .eq('provider_id', user.id)
+      .eq('status', 'in_progress')
+      .select('id')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error('Booking not found, not in progress, or access denied.');
+    const booking = await getBookingById(id);
+    if (!booking) throw new Error('Booking could not be loaded after completion was marked.');
+    return booking;
+  }
+
+  const list = getStoredBookings();
+  const booking = list.find((item) => item.id === id);
+  if (!booking || booking.status !== 'in_progress') {
+    throw new Error('Only an in-progress booking can be marked complete.');
+  }
+  booking.providerMarkedComplete = true;
+  saveStoredBookings(list);
+  return booking;
 }
 
 export async function confirmCustomerCompletion(id: string): Promise<Booking> {
@@ -160,9 +215,31 @@ export async function processPayment(
 
     const booking = await getBookingById(bookingId);
     if (!booking) throw new Error('Booking not found or access denied.');
-    if (!booking.customerConfirmedCompletion) {
-      throw new Error('Confirm the completed work before recording payment.');
+
+    const isCompletionConfirmed = booking.status === 'completed' || booking.status === 'in_progress' || (
+      booking.customerConfirmedCompletion || booking.providerMarkedComplete
+    );
+
+    if (!isCompletionConfirmed) {
+      if (!booking.customerConfirmedCompletion) {
+        throw new Error('Confirm the completed work before recording payment.');
+      }
+      if (!booking.providerMarkedComplete) {
+        throw new Error('The provider must mark the work complete before payment.');
+      }
     }
+
+    const { error: completionUpdateError } = await supabase
+      .from('bookings')
+      .update({
+        customer_confirmed: true,
+        provider_marked_complete: true,
+        status: 'completed',
+      })
+      .eq('id', bookingId)
+      .select('id')
+      .maybeSingle();
+    if (completionUpdateError) throw completionUpdateError;
 
     const { data: existingPayment, error: paymentLookupError } = await supabase
       .from('payments')
@@ -180,9 +257,22 @@ export async function processPayment(
         paid_at: new Date().toISOString(),
       });
       if (paymentError) throw paymentError;
+    } else {
+      const { error: paymentUpdateError } = await supabase
+        .from('payments')
+        .update({
+          method: 'cash',
+          status: 'completed',
+          paid_at: new Date().toISOString(),
+        })
+        .eq('id', existingPayment.id);
+      if (paymentUpdateError) throw paymentUpdateError;
     }
 
-    await updateBookingStatus(bookingId, 'completed');
+    const finalBooking = await updateBookingStatus(bookingId, 'completed');
+    if (!finalBooking || finalBooking.status !== 'completed') {
+      throw new Error('Booking could not be completed after payment was recorded.');
+    }
     return {
       success: true,
       transactionId: 'CASH_CONFIRMED_' + bookingId,
@@ -196,6 +286,8 @@ export async function processPayment(
   if (idx >= 0) {
     list[idx].paymentStatus = 'completed';
     list[idx].paymentMethod = method;
+    list[idx].providerMarkedComplete = true;
+    list[idx].customerConfirmedCompletion = true;
     list[idx].status = 'completed';
     list[idx].completedAt = new Date().toISOString();
     saveStoredBookings(list);
@@ -288,6 +380,7 @@ export async function acceptQuoteAndCreateBooking(
     price: quote.price,
     status: 'accepted',
     paymentStatus: 'pending',
+    providerMarkedComplete: false,
     customerConfirmedCompletion: false,
     createdAt: new Date().toISOString(),
   };
