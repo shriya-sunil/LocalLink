@@ -11,6 +11,7 @@ import {
   ExternalLink,
   ShieldCheck,
   User,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { getRequestById, getQuotesForRequest } from '../../lib/api/requests';
 import { acceptQuoteAndCreateBooking } from '../../lib/api/bookings';
@@ -28,6 +29,10 @@ export const RequestDetailsPage: React.FC = () => {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(true);
   const [acceptingQuoteId, setAcceptingQuoteId] = useState<string | null>(null);
+  const [quoteSort, setQuoteSort] = useState<'best' | 'rating' | 'experience' | 'price'>('best');
+  const [minRating, setMinRating] = useState(0);
+  const [minExperience, setMinExperience] = useState(0);
+  const [maxPrice, setMaxPrice] = useState('');
 
   useEffect(() => {
     async function loadData() {
@@ -119,6 +124,18 @@ export const RequestDetailsPage: React.FC = () => {
   }
 
   const isEmergency = request.urgency === 'emergency';
+  const filteredQuotes = quotes
+    .filter((quote) => quote.providerRating >= minRating)
+    .filter((quote) => (quote.providerExperience || 0) >= minExperience)
+    .filter((quote) => !maxPrice || quote.price <= Number(maxPrice))
+    .sort((a, b) => {
+      if (quoteSort === 'rating') return b.providerRating - a.providerRating || b.price - a.price;
+      if (quoteSort === 'experience') return (b.providerExperience || 0) - (a.providerExperience || 0) || b.providerRating - a.providerRating;
+      if (quoteSort === 'price') return a.price - b.price || b.providerRating - a.providerRating;
+      return b.providerRating - a.providerRating
+        || (b.providerExperience || 0) - (a.providerExperience || 0)
+        || a.price - b.price;
+    });
 
   return (
     <div className="space-y-5 pb-8">
@@ -207,6 +224,50 @@ export const RequestDetailsPage: React.FC = () => {
           <span className="text-xs text-gray-500 font-medium">Instant Booking</span>
         </div>
 
+        {quotes.length > 0 && (
+          <div className="ll-card p-3 space-y-3">
+            <div className="flex items-center gap-2 text-xs font-bold text-navy">
+              <SlidersHorizontal size={15} className="text-teal" />
+              <span>Compare offers</span>
+              <span className="ml-auto font-medium text-gray-500">{filteredQuotes.length} of {quotes.length}</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <label className="text-[11px] font-semibold text-gray-600">
+                Sort by
+                <select value={quoteSort} onChange={(event) => setQuoteSort(event.target.value as typeof quoteSort)} className="mt-1 w-full rounded-lg border border-sage-border bg-white p-2 text-xs text-navy">
+                  <option value="best">Best match</option>
+                  <option value="rating">Rating</option>
+                  <option value="experience">Experience</option>
+                  <option value="price">Lowest price</option>
+                </select>
+              </label>
+              <label className="text-[11px] font-semibold text-gray-600">
+                Min. rating
+                <select value={minRating} onChange={(event) => setMinRating(Number(event.target.value))} className="mt-1 w-full rounded-lg border border-sage-border bg-white p-2 text-xs text-navy">
+                  <option value={0}>Any rating</option>
+                  <option value={3}>3+ stars</option>
+                  <option value={4}>4+ stars</option>
+                  <option value={4.5}>4.5+ stars</option>
+                </select>
+              </label>
+              <label className="text-[11px] font-semibold text-gray-600">
+                Min. experience
+                <select value={minExperience} onChange={(event) => setMinExperience(Number(event.target.value))} className="mt-1 w-full rounded-lg border border-sage-border bg-white p-2 text-xs text-navy">
+                  <option value={0}>Any experience</option>
+                  <option value={1}>1+ years</option>
+                  <option value={3}>3+ years</option>
+                  <option value={5}>5+ years</option>
+                  <option value={10}>10+ years</option>
+                </select>
+              </label>
+              <label className="text-[11px] font-semibold text-gray-600">
+                Max. quote (₹)
+                <input type="number" min="0" value={maxPrice} onChange={(event) => setMaxPrice(event.target.value)} placeholder="No limit" className="mt-1 w-full rounded-lg border border-sage-border bg-white p-2 text-xs text-navy" />
+              </label>
+            </div>
+          </div>
+        )}
+
         {quotes.length === 0 ? (
           <div className="ll-card p-6 text-center space-y-2 bg-salmon-light/30 border-salmon">
             <div className="w-10 h-10 rounded-full bg-salmon-light text-navy flex items-center justify-center mx-auto">
@@ -218,8 +279,13 @@ export const RequestDetailsPage: React.FC = () => {
             </p>
           </div>
         ) : (
+          filteredQuotes.length === 0 ? (
+            <div className="ll-card p-5 text-center text-xs text-gray-600">
+              No quotes match these filters. Try lowering the rating or experience threshold.
+            </div>
+          ) : (
           <div className="space-y-3">
-            {quotes.map((quote) => {
+            {filteredQuotes.map((quote) => {
               const isAccepting = acceptingQuoteId === quote.id;
               return (
                 <div
@@ -241,7 +307,15 @@ export const RequestDetailsPage: React.FC = () => {
                           <span>{quote.providerName}</span>
                           <ShieldCheck size={14} className="text-teal" />
                         </Link>
-                        <RatingStars rating={quote.providerRating || 5} size="sm" />
+                        {quote.providerRating > 0 ? (
+                          <RatingStars rating={quote.providerRating} totalReviews={quote.providerReviewCount} size="sm" />
+                        ) : (
+                          <span className="text-[11px] text-gray-500">No ratings yet</span>
+                        )}
+                        <div className="mt-1 text-[11px] text-gray-500">
+                          {quote.providerExperience ? `${quote.providerExperience} years experience` : 'Experience not listed'}
+                          {quote.providerReviewCount ? ` · ${quote.providerReviewCount} reviews` : ''}
+                        </div>
                       </div>
                     </div>
 
@@ -288,6 +362,7 @@ export const RequestDetailsPage: React.FC = () => {
               );
             })}
           </div>
+          )
         )}
       </div>
     </div>

@@ -72,6 +72,8 @@ function mapQuote(row: any): Quote {
     providerName: provider?.full_name || 'Local Professional',
     providerAvatar: provider?.avatar_url || '',
     providerRating: Number(providerProfile?.rating_avg || 0),
+    providerExperience: Number(providerProfile?.years_experience || 0),
+    providerReviewCount: Number(providerProfile?.rating_count || 0),
     providerPhone: provider?.phone || undefined,
     price: Number(row.price),
     message: row.message || '',
@@ -214,7 +216,7 @@ export async function getQuotesForRequest(requestId: string): Promise<Quote[]> {
   if (!isDevDemoMode()) {
     const { data, error } = await supabase
       .from('quotes')
-      .select('*, provider_profiles!quotes_provider_id_fkey(rating_avg, profiles!provider_profiles_user_id_fkey(full_name, avatar_url, phone))')
+      .select('*, provider_profiles!quotes_provider_id_fkey(rating_avg, rating_count, years_experience, profiles!provider_profiles_user_id_fkey(full_name, avatar_url, phone))')
       .eq('request_id', requestId)
       .order('created_at', { ascending: false });
     if (error) throw error;
@@ -241,7 +243,7 @@ export async function sendQuote(quoteData: Omit<Quote, 'id' | 'createdAt' | 'sta
         message: quoteData.message,
         status: 'pending',
       })
-      .select('*, provider_profiles!quotes_provider_id_fkey(rating_avg, profiles!provider_profiles_user_id_fkey(full_name, avatar_url, phone))')
+      .select('*, provider_profiles!quotes_provider_id_fkey(rating_avg, rating_count, years_experience, profiles!provider_profiles_user_id_fkey(full_name, avatar_url, phone))')
       .single();
     if (error) throw error;
     return mapQuote(data);

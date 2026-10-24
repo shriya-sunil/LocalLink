@@ -77,6 +77,8 @@ export interface Quote {
   providerName: string;
   providerAvatar: string;
   providerRating: number;
+  providerExperience?: number;
+  providerReviewCount?: number;
   providerPhone?: string;
   price: number;
   message: string;
